@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { MapPin, CheckCircle, Clock, ShieldAlert } from 'lucide-react';
+import { MapPin, CheckCircle, Clock, AlertTriangle, ShieldCheck, Shield, Bell, Radio } from 'lucide-react';
 
 interface Alerta {
   id: number;
@@ -13,9 +13,123 @@ interface Alerta {
   created_at: string;
 }
 
+type RiskLevel = "alto" | "medio" | "bajo";
+
+const riskConfig = {
+  alto: {
+    label: "Riesgo Alto",
+    border: "border-red-500",
+    glow: "shadow-red-500/30",
+    badge: "bg-red-500/20 text-red-400 border border-red-500/40",
+    icon: AlertTriangle,
+    iconColor: "text-red-400",
+    dot: "bg-red-500",
+    pulse: "animate-pulse",
+    headerBg: "bg-red-500/10",
+    btnPrimary: "bg-red-600 hover:bg-red-500 text-white",
+  },
+  medio: {
+    label: "Riesgo Medio",
+    border: "border-yellow-500",
+    glow: "shadow-yellow-500/20",
+    badge: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/40",
+    icon: Shield,
+    iconColor: "text-yellow-400",
+    dot: "bg-yellow-400",
+    pulse: "animate-pulse",
+    headerBg: "bg-yellow-500/10",
+    btnPrimary: "bg-yellow-600 hover:bg-yellow-500 text-white",
+  },
+  bajo: {
+    label: "Bajo Riesgo",
+    border: "border-emerald-500",
+    glow: "shadow-emerald-500/20",
+    badge: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40",
+    icon: ShieldCheck,
+    iconColor: "text-emerald-400",
+    dot: "bg-emerald-400",
+    pulse: "",
+    headerBg: "bg-emerald-500/10",
+    btnPrimary: "bg-emerald-700 hover:bg-emerald-600 text-white",
+  },
+};
+
+const getRiskLevel = (color: string): RiskLevel => {
+  if (color === 'red') return 'alto';
+  if (color === 'yellow') return 'medio';
+  return 'bajo';
+};
+
+function AlertCard({ alert, handleStatusChange }: { alert: Alerta; handleStatusChange: (id: number, status: string, rut: string) => void }) {
+  const risk = getRiskLevel(alert.button_color);
+  const cfg = riskConfig[risk];
+  const Icon = cfg.icon;
+  const isEnCurso = alert.status === 'en curso';
+
+  return (
+    <div
+      className={`relative rounded-xl border-2 ${cfg.border} bg-zinc-900 shadow-lg ${cfg.glow} flex flex-col overflow-hidden transition-transform hover:-translate-y-0.5 duration-200`}
+    >
+      {/* Header strip */}
+      <div className={`flex items-center gap-2 px-4 py-2.5 ${cfg.headerBg}`}>
+        <span className={`relative flex h-2.5 w-2.5`}>
+          <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${cfg.dot} ${cfg.pulse}`} />
+          <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${cfg.dot}`} />
+        </span>
+        <Icon size={14} className={cfg.iconColor} />
+        <span className={`text-xs font-semibold uppercase tracking-widest ${cfg.iconColor}`}>{cfg.label}</span>
+        <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium ${isEnCurso ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : cfg.badge}`}>
+          {alert.status || 'Aceptada'}
+        </span>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 px-4 py-4 space-y-2.5">
+        <p className="text-white font-bold text-base leading-tight">{alert.user_name || 'Desconocido'}</p>
+        <p className="text-zinc-400 text-xs font-mono">RUT: {alert.user_rut || 'N/A'}</p>
+
+        <div className="flex items-start gap-1.5 text-zinc-400 text-xs">
+          <MapPin size={12} className="mt-0.5 shrink-0 text-zinc-500" />
+          <span className="font-mono">Lat: {alert.lat}, Lng: {alert.lng}</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-zinc-400 text-xs">
+          <Clock size={12} className="shrink-0 text-zinc-500" />
+          <span>Recibido: {new Date(alert.created_at).toLocaleTimeString('es-CL')}</span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 px-4 pb-4">
+        <button
+          onClick={() => handleStatusChange(alert.id, 'en curso', alert.user_rut)}
+          disabled={isEnCurso}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors border ${isEnCurso ? 'bg-zinc-800 text-zinc-600 border-zinc-800 cursor-not-allowed' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700'}`}
+        >
+          <Bell size={12} />
+          Notificar Patrulla
+        </button>
+        <button
+          onClick={() => handleStatusChange(alert.id, 'finalizada', alert.user_rut)}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${cfg.btnPrimary}`}
+        >
+          <CheckCircle size={12} />
+          Finalizar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     const fetchAlertas = async () => {
@@ -39,6 +153,10 @@ function App() {
 
     fetchAlertas();
 
+    const pollInterval = setInterval(() => {
+      fetchAlertas();
+    }, 5000);
+
     const channel = supabase.channel('alertas-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alertas' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
@@ -49,7 +167,11 @@ function App() {
             newAlert.status = 'aceptada';
           }
           
-          setAlertas(prev => [newAlert, ...prev]);
+          setAlertas(prev => {
+            const exists = prev.some(a => a.id === newAlert.id);
+            if (!exists) return [newAlert, ...prev];
+            return prev;
+          });
         } else if (payload.eventType === 'UPDATE') {
           const updatedAlert = payload.new as Alerta;
           
@@ -68,21 +190,19 @@ function App() {
       .subscribe();
 
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, []);
 
   const handleStatusChange = async (id: number, newStatus: string, user_rut: string) => {
     try {
-      // Actualización optimista de la UI
       if (newStatus === 'finalizada') {
         setAlertas(prev => prev.filter(a => a.id !== id));
       } else {
         setAlertas(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
       }
 
-      // IMPORTANTE: Se envía user_rut para que Supabase lo incluya en el evento de Realtime (WAL) 
-      // y la app móvil (que filtra por user_rut) reciba la notificación correctamente.
       const { error } = await supabase.from('alertas').update({ status: newStatus, user_rut }).eq('id', id);
       if (error) {
         console.error(error);
@@ -94,19 +214,51 @@ function App() {
     }
   };
 
+  const counts = {
+    alto: alertas.filter(a => getRiskLevel(a.button_color) === "alto").length,
+    medio: alertas.filter(a => getRiskLevel(a.button_color) === "medio").length,
+    bajo: alertas.filter(a => getRiskLevel(a.button_color) === "bajo").length,
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* HEADER */}
-      <header className="bg-emerald-600 shadow-md p-5 flex justify-between items-center text-white">
-        <div className="flex items-center gap-3">
-          <div className="bg-emerald-500 p-2 rounded-lg">
-            <ShieldAlert size={28} />
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col font-sans">
+      {/* Header */}
+      <header className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-orange-500/20 border border-orange-500/40 flex items-center justify-center">
+              <Radio size={18} className="text-orange-400" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight leading-none">Panel Operador CENCO</h1>
+              <p className="text-xs text-emerald-400 mt-0.5 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                Conectado y Actualizándose...
+              </p>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold tracking-wide">Panel Operador CENCO</h1>
-        </div>
-        <div className="flex items-center gap-2 bg-emerald-700/50 px-4 py-2 rounded-full border border-emerald-500/30">
-          <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse"></div>
-          <span className="font-semibold text-sm">Conectado y En Línea</span>
+
+          {/* Stats */}
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              <span className="text-zinc-400">Alto</span>
+              <span className="font-bold text-red-400">{counts.alto}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+              <span className="text-zinc-400">Medio</span>
+              <span className="font-bold text-yellow-400">{counts.medio}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <span className="text-zinc-400">Bajo</span>
+              <span className="font-bold text-emerald-400">{counts.bajo}</span>
+            </div>
+            <div className="pl-4 border-l border-zinc-700 text-zinc-400 font-mono text-xs">
+              {time.toLocaleTimeString("es-CL")}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -114,93 +266,51 @@ function App() {
       {errorMsg && (
         <div className="bg-red-500 text-white p-4 text-center font-bold shadow-md">
           ⚠️ Ocurrió un error: {errorMsg} <br/>
-          <span className="text-sm font-normal">¿Añadiste la columna 'status' en la base de datos?</span>
         </div>
       )}
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
-        <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
-          <h2 className="text-2xl font-extrabold text-slate-800">Emergencias Activas</h2>
-          <span className="bg-emerald-100 text-emerald-800 font-bold px-3 py-1 rounded-full text-sm shadow-sm">
-            {alertas.length}
-          </span>
+      {/* Main */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Emergencias Activas</h2>
+            <p className="text-zinc-500 text-sm">Total: {alertas.length} — En orden de llegada</p>
+          </div>
         </div>
 
-        {alertas.length === 0 && !errorMsg ? (
-          <div className="flex flex-col items-center justify-center flex-1 text-slate-400 mt-20 gap-4">
-            <CheckCircle size={64} className="text-emerald-300 opacity-50" />
-            <p className="text-lg font-medium">No hay emergencias pendientes en este momento.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {alertas.map(alerta => {
-              const isEnCurso = alerta.status === 'en curso';
-              
-              let borderColor = 'border-emerald-500';
-              let badgeColor = 'bg-emerald-100 text-emerald-700';
-              if (alerta.button_color === 'red') {
-                borderColor = 'border-red-500';
-                badgeColor = 'bg-red-100 text-red-700';
-              } else if (alerta.button_color === 'yellow') {
-                borderColor = 'border-amber-400';
-                badgeColor = 'bg-amber-100 text-amber-700';
-              }
-
-              return (
-                <div 
-                  key={alerta.id} 
-                  className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow border-l-[6px] ${borderColor} flex flex-col gap-4 relative overflow-hidden`}
-                >
-                  {isEnCurso && (
-                    <div className="absolute top-0 right-0 bg-blue-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg uppercase tracking-wider">
-                      Patrulla Notificada
-                    </div>
-                  )}
-
-                  <div className="flex justify-between items-start mt-2">
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-800 leading-tight">
-                        {alerta.user_name || 'Desconocido'}
-                      </h3>
-                      <p className="text-xs text-slate-500 font-medium mt-1">RUT: {alerta.user_rut || 'N/A'}</p>
-                    </div>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-md uppercase ${isEnCurso ? 'bg-blue-100 text-blue-700' : badgeColor}`}>
-                      {alerta.status || 'Aceptada'}
-                    </span>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 border border-slate-100">
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <MapPin size={16} className="text-emerald-500" />
-                      <span className="text-sm font-medium">Lat: {alerta.lat}, Lng: {alerta.lng}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-slate-500">
-                      <Clock size={14} className="text-slate-400" />
-                      <span className="text-xs">Recibido: {new Date(alerta.created_at).toLocaleTimeString('es-CL')}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3 mt-auto pt-2">
-                    <button
-                      onClick={() => handleStatusChange(alerta.id, 'en curso', alerta.user_rut)}
-                      disabled={isEnCurso}
-                      className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all ${isEnCurso ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white shadow-sm hover:shadow-md'}`}
-                    >
-                      Notificar Patrulla
-                    </button>
-                    <button
-                      onClick={() => handleStatusChange(alerta.id, 'finalizada', alerta.user_rut)}
-                      className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm hover:shadow-md transition-all"
-                    >
-                      Finalizar
-                    </button>
-                  </div>
+        <div className="grid grid-cols-3 gap-4 items-start">
+          {(["alto", "medio", "bajo"] as RiskLevel[]).map(risk => {
+            const cfg = riskConfig[risk];
+            const column = alertas.filter(a => getRiskLevel(a.button_color) === risk);
+            const Icon = cfg.icon;
+            
+            return (
+              <div key={risk} className="flex flex-col gap-3">
+                {/* Column header */}
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${cfg.border} ${cfg.headerBg}`}>
+                  <Icon size={14} className={cfg.iconColor} />
+                  <span className={`text-xs font-semibold uppercase tracking-widest ${cfg.iconColor}`}>{cfg.label}</span>
+                  <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${cfg.badge}`}>{column.length}</span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                {/* Cards */}
+                {column.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-zinc-700 gap-2 border border-dashed border-zinc-800 rounded-xl">
+                    <Icon size={28} className="text-zinc-800" />
+                    <p className="text-xs">Sin alertas</p>
+                  </div>
+                ) : (
+                  column.map(alert => (
+                    <AlertCard
+                      key={alert.id}
+                      alert={alert}
+                      handleStatusChange={handleStatusChange}
+                    />
+                  ))
+                )}
+              </div>
+            );
+          })}
+        </div>
       </main>
     </div>
   );
