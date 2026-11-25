@@ -84,14 +84,36 @@ function AlertCard({ alert, handleStatusChange }: { alert: Alerta; handleStatusC
     let isMounted = true;
     const fetchAddress = async () => {
       try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${alert.lat}&lon=${alert.lng}`);
+        // zoom=18 para forzar nivel de casa/edificio (house number) y addressdetails=1
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${alert.lat}&lon=${alert.lng}&zoom=18&addressdetails=1`
+        );
         const data = await res.json();
         if (isMounted) {
           if (data && data.address) {
-            const road = data.address.road || data.address.pedestrian || data.address.suburb || '';
-            const houseNumber = data.address.house_number || '';
-            const city = data.address.city || data.address.town || data.address.county || '';
-            const formatted = `${road} ${houseNumber}${city ? `, ${city}` : ''}`.trim();
+            const addr = data.address;
+            const road = addr.road || addr.street || addr.residential || addr.footway || addr.neighbourhood || '';
+            const houseNumber = addr.house_number || '';
+            const suburb = addr.suburb || addr.quarter || '';
+            const city = addr.city || addr.town || addr.municipality || addr.village || addr.county || '';
+            
+            // Construir dirección limpia en orden: Calle + Número, Barrio/Sector, Comuna
+            let parts: string[] = [];
+            if (road) {
+              parts.push(houseNumber ? `${road} #${houseNumber}` : road);
+            } else if (houseNumber) {
+              parts.push(`#${houseNumber}`);
+            }
+
+            if (suburb && suburb !== road && suburb !== city) {
+              parts.push(suburb);
+            }
+
+            if (city) {
+              parts.push(city);
+            }
+
+            const formatted = parts.join(', ');
             setAddress(formatted || data.display_name || 'Ubicación identificada');
           } else {
             setAddress(data.display_name || 'Ubicación identificada');
