@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { MapPin, CheckCircle, Clock, AlertTriangle, ShieldCheck, Shield, Bell, Radio } from 'lucide-react';
+import { MapPin, Navigation, CheckCircle, Clock, AlertTriangle, ShieldCheck, Shield, Bell, Radio } from 'lucide-react';
 
 interface Alerta {
   id: number;
@@ -9,6 +9,7 @@ interface Alerta {
   button_color: string;
   lat: number;
   lng: number;
+  address_text?: string;
   status: string;
   created_at: string;
 }
@@ -65,6 +66,52 @@ function AlertCard({ alert, handleStatusChange }: { alert: Alerta; handleStatusC
   const cfg = riskConfig[risk];
   const Icon = cfg.icon;
   const isEnCurso = alert.status === 'en curso';
+  const [address, setAddress] = useState<string>(alert.address_text || '');
+  const [loadingAddress, setLoadingAddress] = useState<boolean>(!alert.address_text && !!alert.lat && !!alert.lng);
+
+  useEffect(() => {
+    if (alert.address_text) {
+      setAddress(alert.address_text);
+      return;
+    }
+
+    if (!alert.lat || !alert.lng) {
+      setAddress('Sin coordenadas disponibles');
+      setLoadingAddress(false);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchAddress = async () => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${alert.lat}&lon=${alert.lng}`);
+        const data = await res.json();
+        if (isMounted) {
+          if (data && data.address) {
+            const road = data.address.road || data.address.pedestrian || data.address.suburb || '';
+            const houseNumber = data.address.house_number || '';
+            const city = data.address.city || data.address.town || data.address.county || '';
+            const formatted = `${road} ${houseNumber}${city ? `, ${city}` : ''}`.trim();
+            setAddress(formatted || data.display_name || 'Ubicación identificada');
+          } else {
+            setAddress(data.display_name || 'Ubicación identificada');
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setAddress('Aprox: Sector detectado');
+        }
+      } finally {
+        if (isMounted) setLoadingAddress(false);
+      }
+    };
+
+    fetchAddress();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [alert.lat, alert.lng, alert.address_text]);
 
   return (
     <div
@@ -88,9 +135,31 @@ function AlertCard({ alert, handleStatusChange }: { alert: Alerta; handleStatusC
         <p className="text-white font-bold text-base leading-tight">{alert.user_name || 'Desconocido'}</p>
         <p className="text-zinc-400 text-xs font-mono">RUT: {alert.user_rut || 'N/A'}</p>
 
+        {/* Coordenadas Originales */}
         <div className="flex items-start gap-1.5 text-zinc-400 text-xs">
           <MapPin size={12} className="mt-0.5 shrink-0 text-zinc-500" />
           <span className="font-mono">Lat: {alert.lat}, Lng: {alert.lng}</span>
+        </div>
+
+        {/* Dirección Aproximada (Calle y Número) */}
+        <div className="flex items-start gap-1.5 text-xs bg-zinc-800/70 p-2 rounded-lg border border-zinc-700/50">
+          <Navigation size={13} className="mt-0.5 shrink-0 text-sky-400" />
+          <div className="flex-1">
+            <span className="text-[10px] text-zinc-400 uppercase font-semibold block">Dirección Aproximada</span>
+            <span className="text-zinc-200 font-medium">
+              {loadingAddress ? 'Buscando calle y número...' : address || 'Dirección no identificada'}
+            </span>
+            {alert.lat && alert.lng && (
+              <a
+                href={`https://www.google.com/maps?q=${alert.lat},${alert.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-sky-400 hover:text-sky-300 underline block mt-0.5"
+              >
+                Abrir en Google Maps ↗
+              </a>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 text-zinc-400 text-xs">
